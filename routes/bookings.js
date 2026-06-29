@@ -53,23 +53,31 @@ router.get('/:id', authenticateToken, async (req, res) => {
     }
 });
 
-router.put('/:id', authenticateToken, async (req, res) => {
-    const { id } = req.params;
-    const { status } = req.body;
-    try {
-        const result = await pool.query(
-            'UPDATE booking SET status = $1 WHERE id = $2 RETURNING *',
-            [status, id]
-        );
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Booking not found' });
+router.put('/:id', authenticateToken,
+    body('status').trim().notEmpty().withMessage('Status is required'),
+    body('status').isIn(['confirmed', 'cancelled', 'completed']).withMessage('Status must be confirmed, cancelled, or completed'),
+    async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
         }
-        res.json(result.rows[0]);
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Server error' });
+        const { id } = req.params;
+        const { status } = req.body;
+        try {
+            const result = await pool.query(
+                'UPDATE booking SET status = $1 WHERE id = $2 RETURNING *',
+                [status, id]
+            );
+            if (result.rows.length === 0) {
+                return res.status(404).json({ error: 'Booking not found' });
+            }
+            res.json(result.rows[0]);
+        } catch (err) {
+            console.error(err);
+            res.status(500).json({ error: 'Server error' });
+        }
     }
-});
+);
 
 router.delete('/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;

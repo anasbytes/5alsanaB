@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../db');
 const bcrypt = require('bcrypt');
 const authenticateToken = require('../middleware/auth');
+const { body, validationResult } = require('express-validator');
 
 router.get('/', async (req, res) => {
     try {
@@ -14,21 +15,30 @@ router.get('/', async (req, res) => {
     }
 });
 
-router.post('/', async (req, res) => {
-    const { username, email, phone_number, password } = req.body;
-    try {
-        const saltRounds = 10;
-        const hashedPassword = await bcrypt.hash(password, saltRounds);
-        const result = await pool.query(
-            'INSERT INTO "user" (username, email, phone_number, password) VALUES ($1, $2, $3, $4) RETURNING id, username, email, phone_number',
-            [username, email, phone_number, hashedPassword]
-        );
-        res.status(201).json(result.rows[0]);
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Server error' });
+router.post('/',
+    body('username').trim().notEmpty().withMessage('Username is required'),
+    body('phone_number').notEmpty().withMessage('Phone number is required'),
+    body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+    async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
+        const { username, email, phone_number, password } = req.body;
+        try {
+            const saltRounds = 10;
+            const hashedPassword = await bcrypt.hash(password, saltRounds);
+            const result = await pool.query(
+                'INSERT INTO "user" (username, email, phone_number, password) VALUES ($1, $2, $3, $4) RETURNING id, username, email, phone_number',
+                [username, email, phone_number, hashedPassword]
+            );
+            res.status(201).json(result.rows[0]);
+        } catch (err) {
+            console.error(err);
+            res.status(500).json({ error: 'Server error' });
+        }
     }
-});
+);
 
 router.get('/:id', async (req, res) => {
     const { id } = req.params;
@@ -47,23 +57,31 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-router.put('/:id', authenticateToken, async (req, res) => {
-    const { id } = req.params;
-    const { username, email, phone_number } = req.body;
-    try {
-        const result = await pool.query(
-            'UPDATE "user" SET username = $1, email = $2, phone_number = $3 WHERE id = $4 RETURNING id, username, email, phone_number',
-            [username, email, phone_number, id]
-        );
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'User not found' });
+router.put('/:id', authenticateToken,
+    body('username').trim().notEmpty().withMessage('Username is required'),
+    body('phone_number').notEmpty().withMessage('Phone number is required'),
+    async (req, res) => {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
         }
-        res.json(result.rows[0]);
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Server error' });
+        const { id } = req.params;
+        const { username, email, phone_number } = req.body;
+        try {
+            const result = await pool.query(
+                'UPDATE "user" SET username = $1, email = $2, phone_number = $3 WHERE id = $4 RETURNING id, username, email, phone_number',
+                [username, email, phone_number, id]
+            );
+            if (result.rows.length === 0) {
+                return res.status(404).json({ error: 'User not found' });
+            }
+            res.json(result.rows[0]);
+        } catch (err) {
+            console.error(err);
+            res.status(500).json({ error: 'Server error' });
+        }
     }
-});
+);
 
 router.delete('/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
