@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const authenticateToken = require('../middleware/auth');
 const { body, validationResult } = require('express-validator');
 
 router.get('/', async (req, res) => {
@@ -13,9 +14,10 @@ router.get('/', async (req, res) => {
     }
 });
 
-router.post('/',
+router.post('/', authenticateToken,
     body('name').trim().notEmpty().withMessage('Name is required'),
     body('type').trim().notEmpty().withMessage('Type is required'),
+    body('type').isIn(['football', 'basketball', 'padel', 'ping pong', 'playstation']).withMessage('Invalid facility type'),
     body('location').trim().notEmpty().withMessage('Location is required'),
     body('price_per_hour').isFloat({ min: 0 }).withMessage('Valid price is required'),
     async (req, res) => {
@@ -23,11 +25,12 @@ router.post('/',
         if (!errors.isEmpty()) {
             return res.status(400).json({ errors: errors.array() });
         }
-        const { name, type, location, price_per_hour } = req.body;
+        const { name, type, location, price_per_hour, image_url } = req.body;
+        const owner_id = req.user.userId;
         try {
             const result = await pool.query(
-                'INSERT INTO facility (name, type, location, price_per_hour) VALUES ($1, $2, $3, $4) RETURNING *',
-                [name, type, location, price_per_hour]
+                'INSERT INTO facility (name, type, location, price_per_hour, image_url, owner_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+                [name, type, location, price_per_hour, image_url || null, owner_id]
             );
             res.status(201).json(result.rows[0]);
         } catch (err) {
@@ -36,6 +39,17 @@ router.post('/',
         }
     }
 );
+
+router.get('/owner/:ownerId', authenticateToken, async (req, res) => {
+    const { ownerId } = req.params;
+    try {
+        const result = await pool.query('SELECT * FROM facility WHERE owner_id = $1', [ownerId]);
+        res.json(result.rows);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
 
 router.get('/:id', async (req, res) => {
     const { id } = req.params;
@@ -51,9 +65,10 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-router.put('/:id',
+router.put('/:id', authenticateToken,
     body('name').trim().notEmpty().withMessage('Name is required'),
     body('type').trim().notEmpty().withMessage('Type is required'),
+    body('type').isIn(['football', 'basketball', 'padel', 'ping pong', 'playstation']).withMessage('Invalid facility type'),
     body('location').trim().notEmpty().withMessage('Location is required'),
     body('price_per_hour').isFloat({ min: 0 }).withMessage('Valid price is required'),
     async (req, res) => {
@@ -62,14 +77,14 @@ router.put('/:id',
             return res.status(400).json({ errors: errors.array() });
         }
         const { id } = req.params;
-        const { name, type, location, price_per_hour } = req.body;
+        const { name, type, location, price_per_hour, image_url } = req.body;
         try {
             const result = await pool.query(
-                'UPDATE facility SET name = $1, type = $2, location = $3, price_per_hour = $4 WHERE id = $5 RETURNING *',
-                [name, type, location, price_per_hour, id]
+                'UPDATE facility SET name = $1, type = $2, location = $3, price_per_hour = $4, image_url = $5 WHERE id = $6 AND owner_id = $7 RETURNING *',
+                [name, type, location, price_per_hour, image_url || null, id, req.user.userId]
             );
             if (result.rows.length === 0) {
-                return res.status(404).json({ error: 'Facility not found' });
+                return res.status(404).json({ error: 'Facility not found or unauthorized' });
             }
             res.json(result.rows[0]);
         } catch (err) {
@@ -79,15 +94,15 @@ router.put('/:id',
     }
 );
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     try {
         const result = await pool.query(
-            'DELETE FROM facility WHERE id = $1 RETURNING *',
-            [id]
+            'DELETE FROM facility WHERE id = $1 AND owner_id = $2 RETURNING *',
+            [id, req.user.userId]
         );
         if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Facility not found' });
+            return res.status(404).json({ error: 'Facility not found or unauthorized' });
         }
         res.json({ message: 'Facility deleted', facility: result.rows[0] });
     } catch (err) {

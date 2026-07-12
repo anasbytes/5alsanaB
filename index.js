@@ -16,7 +16,7 @@ app.use('/bookings', bookingRoutes);
 app.use('/auth', authRoutes);
 
 app.get('/', (req, res) => {
-    res.send('The E7gezly server is running!');
+    res.send('The 5alsana server is running!');
 });
 
 app.use((err, req, res, next) => {
