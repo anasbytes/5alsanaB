@@ -8,4 +8,8 @@ const pool = new Pool({
     port: process.env.DB_PORT,
 });
 
+pool.on('error', (err) => {
+    console.error('Unexpected database error:', err);
+});
+
 module.exports = pool;

@@ -1,9 +1,18 @@
 require('dotenv').config();
 const express = require('express');
+const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 const app = express();
 const PORT = process.env.PORT;
 
+app.use(cors());
 app.use(express.json());
+
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    message: { error: 'Too many attempts. Please try again in 15 minutes.' }
+});
 
 const facilityRoutes = require('./routes/facilities');
 const userRoutes = require('./routes/users');
@@ -13,7 +22,7 @@ const authRoutes = require('./routes/auth');
 app.use('/facilities', facilityRoutes);
 app.use('/users', userRoutes);
 app.use('/bookings', bookingRoutes);
-app.use('/auth', authRoutes);
+app.use('/auth', authLimiter, authRoutes);
 
 app.get('/', (req, res) => {
     res.send('The 5alsana server is running!');

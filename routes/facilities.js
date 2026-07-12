@@ -4,6 +4,7 @@ const pool = require('../db');
 const authenticateToken = require('../middleware/auth');
 const { body, validationResult } = require('express-validator');
 
+// Publicly viewable: Get all facilities
 router.get('/', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM facility');
@@ -14,6 +15,7 @@ router.get('/', async (req, res) => {
     }
 });
 
+// Create a facility (Only Hosts)
 router.post('/', authenticateToken,
     body('name').trim().notEmpty().withMessage('Name is required'),
     body('type').trim().notEmpty().withMessage('Type is required'),
@@ -21,12 +23,19 @@ router.post('/', authenticateToken,
     body('location').trim().notEmpty().withMessage('Location is required'),
     body('price_per_hour').isFloat({ min: 0 }).withMessage('Valid price is required'),
     async (req, res) => {
+        // SECURITY FIX: Only allow hosts to create facilities
+        if (req.user.role !== 'host') {
+            return res.status(403).json({ error: 'Only hosts can create facilities' });
+        }
+
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(400).json({ errors: errors.array() });
         }
+        
         const { name, type, location, price_per_hour, image_url } = req.body;
         const owner_id = req.user.userId;
+        
         try {
             const result = await pool.query(
                 'INSERT INTO facility (name, type, location, price_per_hour, image_url, owner_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
@@ -40,8 +49,9 @@ router.post('/', authenticateToken,
     }
 );
 
-router.get('/owner/:ownerId', authenticateToken, async (req, res) => {
-    const { ownerId } = req.params;
+// SECURITY FIX: Replaced /owner/:ownerId with /owner/me
+router.get('/owner/me', authenticateToken, async (req, res) => {
+    const ownerId = req.user.userId;
     try {
         const result = await pool.query('SELECT * FROM facility WHERE owner_id = $1', [ownerId]);
         res.json(result.rows);
@@ -51,6 +61,7 @@ router.get('/owner/:ownerId', authenticateToken, async (req, res) => {
     }
 });
 
+// Publicly viewable: Get specific facility details
 router.get('/:id', async (req, res) => {
     const { id } = req.params;
     try {
@@ -65,6 +76,7 @@ router.get('/:id', async (req, res) => {
     }
 });
 
+// Update a facility (Must be the owner)
 router.put('/:id', authenticateToken,
     body('name').trim().notEmpty().withMessage('Name is required'),
     body('type').trim().notEmpty().withMessage('Type is required'),
@@ -78,7 +90,9 @@ router.put('/:id', authenticateToken,
         }
         const { id } = req.params;
         const { name, type, location, price_per_hour, image_url } = req.body;
+        
         try {
+            // The AND owner_id = $7 query inherently prevents non-owners from updating
             const result = await pool.query(
                 'UPDATE facility SET name = $1, type = $2, location = $3, price_per_hour = $4, image_url = $5 WHERE id = $6 AND owner_id = $7 RETURNING *',
                 [name, type, location, price_per_hour, image_url || null, id, req.user.userId]
@@ -94,6 +108,7 @@ router.put('/:id', authenticateToken,
     }
 );
 
+// Delete a facility (Must be the owner)
 router.delete('/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     try {
