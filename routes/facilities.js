@@ -35,6 +35,20 @@ function requireHost(req, res, next) {
     next();
 }
 
+function handleUpload(req, res, next) {
+    upload.single('image')(req, res, (err) => {
+        if (err instanceof multer.MulterError) {
+            if (err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(400).json({ error: 'Image must be under 5MB.' });
+            }
+            return res.status(400).json({ error: err.message });
+        } else if (err) {
+            return res.status(400).json({ error: err.message });
+        }
+        next();
+    });
+}
+
 function deleteFile(imageUrl) {
     if (!imageUrl) return;
     const filename = imageUrl.split('/uploads/')[1];
@@ -60,12 +74,13 @@ router.get('/', async (req, res) => {
     }
 });
 
-router.post('/', authenticateToken, requireHost, upload.single('image'),
-    body('name').trim().notEmpty().withMessage('Name is required'),
+router.post('/', authenticateToken, requireHost, handleUpload,
+    body('name').trim().notEmpty().isLength({ max: 100 }).withMessage('Name is required and must be under 100 characters'),
     body('type').trim().notEmpty().withMessage('Type is required'),
     body('type').isIn(['football', 'basketball', 'padel', 'ping pong', 'playstation']).withMessage('Invalid facility type'),
-    body('location').trim().notEmpty().withMessage('Location is required'),
+    body('location').trim().notEmpty().isLength({ max: 200 }).withMessage('Location is required and must be under 200 characters'),
     body('price_per_hour').isFloat({ min: 0 }).withMessage('Valid price is required'),
+    body('description').optional({ checkFalsy: true }).isLength({ max: 1000 }).withMessage('Description must be under 1000 characters'),
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
@@ -114,12 +129,13 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-router.put('/:id', authenticateToken, requireHost, upload.single('image'),
-    body('name').trim().notEmpty().withMessage('Name is required'),
+router.put('/:id', authenticateToken, requireHost, handleUpload,
+    body('name').trim().notEmpty().isLength({ max: 100 }).withMessage('Name is required and must be under 100 characters'),
     body('type').trim().notEmpty().withMessage('Type is required'),
     body('type').isIn(['football', 'basketball', 'padel', 'ping pong', 'playstation']).withMessage('Invalid facility type'),
-    body('location').trim().notEmpty().withMessage('Location is required'),
+    body('location').trim().notEmpty().isLength({ max: 200 }).withMessage('Location is required and must be under 200 characters'),
     body('price_per_hour').isFloat({ min: 0 }).withMessage('Valid price is required'),
+    body('description').optional({ checkFalsy: true }).isLength({ max: 1000 }).withMessage('Description must be under 1000 characters'),
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });

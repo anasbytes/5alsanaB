@@ -43,10 +43,10 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
 // Update a user (Secured: Users can only update their own profile)
 router.put('/:id', authenticateToken,
-    body('username').optional().trim().toLowerCase().notEmpty().withMessage('Username cannot be empty'),
+    body('username').optional().trim().toLowerCase().notEmpty().isLength({ max: 50 }).withMessage('Username cannot be empty and must be under 50 characters'),
     body('email').optional({ checkFalsy: true }).isEmail().normalizeEmail().withMessage('Invalid email format'),
-    body('phone_number').optional().notEmpty().withMessage('Phone number cannot be empty'),
-    body('password').optional().isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+    body('phone_number').optional().notEmpty().isLength({ max: 20 }).withMessage('Phone number cannot be empty and must be under 20 characters'),
+    body('password').optional().isLength({ min: 6, max: 72 }).withMessage('Password must be between 6 and 72 characters'),
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {

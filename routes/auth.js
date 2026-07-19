@@ -6,10 +6,10 @@ const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 
 router.post('/register',
-    body('username').trim().toLowerCase().notEmpty().withMessage('Username is required'),
+    body('username').trim().toLowerCase().notEmpty().isLength({ max: 50 }).withMessage('Username is required and must be under 50 characters'),
     body('email').optional({ checkFalsy: true }).isEmail().normalizeEmail().withMessage('Invalid email format'),
-    body('phone_number').trim().notEmpty().withMessage('Phone number is required'),
-    body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+    body('phone_number').trim().notEmpty().isLength({ max: 20 }).withMessage('Phone number is required and must be under 20 characters'),
+    body('password').isLength({ min: 6, max: 72 }).withMessage('Password must be between 6 and 72 characters'),
     body('role').optional().isIn(['player', 'host']).withMessage('Role must be player or host'),
     async (req, res) => {
         const errors = validationResult(req);
