@@ -23,6 +23,7 @@ app.use('/facilities', facilityRoutes);
 app.use('/users', userRoutes);
 app.use('/bookings', bookingRoutes);
 app.use('/auth', authLimiter, authRoutes);
+app.use('/uploads', express.static('uploads'));
 
 app.get('/', (req, res) => {
     res.send('The 5alsana server is running!');

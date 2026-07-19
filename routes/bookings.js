@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const authenticateToken = require('../middleware/auth');
+const authenticateToken = require('../middleware/authMiddleware');
 const { body, validationResult } = require('express-validator');
 const { sendPushNotification } = require('../utils/push');
 
@@ -28,8 +28,18 @@ router.post('/', authenticateToken,
         const { facility_id, booking_date, start_time, end_time } = req.body;
         const user_id = req.user.userId;
 
+        // 🛡️ RACE CONDITION PREVENTER: Checkout a dedicated client for a transaction
+        const client = await pool.connect();
+
         try {
-            const overlapCheck = await pool.query(
+            await client.query('BEGIN'); // Start transaction
+
+            // 🛡️ 1. Lock the facility row so concurrent requests for this specific facility must wait in line
+            await client.query('SELECT id FROM facility WHERE id = $1 FOR UPDATE', [facility_id]);
+
+            // 🛡️ 2. Now perform the overlap check. If a concurrent request was waiting, 
+            // it will only run this query AFTER the first one commits, accurately seeing the new booking.
+            const overlapCheck = await client.query(
                 `SELECT id FROM booking 
                  WHERE facility_id = $1 
                  AND booking_date = $2 
@@ -39,15 +49,20 @@ router.post('/', authenticateToken,
             );
 
             if (overlapCheck.rows.length > 0) {
+                await client.query('ROLLBACK'); // Cancel transaction
                 return res.status(409).json({ error: 'Time slot is already booked or pending.' });
             }
 
-            const result = await pool.query(
+            // 🛡️ 3. Insert the booking safely
+            const result = await client.query(
                 'INSERT INTO booking (user_id, facility_id, booking_date, start_time, end_time, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
                 [user_id, facility_id, booking_date, start_time, end_time, 'pending']
             );
             const booking = result.rows[0];
 
+            await client.query('COMMIT'); // 🛡️ Save everything and release the lock!
+
+            // 🛡️ 4. Do push notifications AFTER the commit so we don't hold the database lock while waiting on Expo's servers
             const facilityResult = await pool.query(
                 `SELECT f.name, u.push_token 
                  FROM facility f 
@@ -68,8 +83,11 @@ router.post('/', authenticateToken,
 
             res.status(201).json(booking);
         } catch (err) {
+            await client.query('ROLLBACK'); // Cancel everything if something breaks
             console.error(err);
             res.status(500).json({ error: 'Server error' });
+        } finally {
+            client.release(); // Return the client to the pool
         }
     }
 );
