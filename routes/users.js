@@ -5,27 +5,13 @@ const bcrypt = require('bcrypt');
 const authenticateToken = require('../middleware/authMiddleware');
 const { body, validationResult } = require('express-validator');
 
-// Admin route: Get all users
-router.get('/', authenticateToken, async (req, res) => {
-    // Note: You should ideally add role-based checking here to ensure only admins/hosts can see all users.
-    try {
-        const result = await pool.query('SELECT id, username, email, phone_number, role FROM "user"');
-        res.json(result.rows);
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-
 // Get a specific user (Secured: Users can only get their own data, or use 'me')
 router.get('/:id', authenticateToken, async (req, res) => {
     let targetId = req.params.id;
 
-    // Convenience feature: Allow the frontend to just call GET /users/me
     if (targetId === 'me') {
         targetId = req.user.userId;
     } else if (parseInt(targetId) !== req.user.userId) {
-        // SECURITY FIX: Prevent reading other users' private data
         return res.status(403).json({ error: 'Unauthorized to view this profile' });
     }
 
@@ -58,11 +44,9 @@ router.put('/:id', authenticateToken,
 
         let targetId = req.params.id;
 
-        // Convenience feature for frontend
         if (targetId === 'me') {
             targetId = req.user.userId;
         } else if (parseInt(targetId) !== req.user.userId) {
-            // SECURITY FIX: Prevent updating other users' profiles
             return res.status(403).json({ error: 'Unauthorized to update this profile' });
         }
 
@@ -108,27 +92,26 @@ router.put('/:id', authenticateToken,
 );
 
 // Delete a user (Secured: Users can only delete their own profile)
-// Delete a user (Secured: Users can only delete their own profile)
 router.delete('/:id', authenticateToken, async (req, res) => {
     let targetId = req.params.id;
 
     if (targetId === 'me') {
         targetId = req.user.userId;
     } else if (parseInt(targetId) !== req.user.userId) {
-        // SECURITY FIX: Prevent deleting other users
         return res.status(403).json({ error: 'Unauthorized to delete this profile' });
     }
 
     try {
         // 1. Delete all bookings made by this player
-        // (Change 'user_id' if your column is named differently, e.g., 'player_id')
-        await pool.query('DELETE FROM bookings WHERE user_id = $1', [targetId]);
+        await pool.query('DELETE FROM booking WHERE user_id = $1', [targetId]);
 
-        // 2. Delete all facilities created by this user (if they are a host)
-        // (Change 'host_id' if your column is named differently, e.g., 'owner_id')
-        await pool.query('DELETE FROM facilities WHERE host_id = $1', [targetId]);
+        // 2. Delete all bookings made on facilities owned by this user (if they are a host)
+        await pool.query('DELETE FROM booking WHERE facility_id IN (SELECT id FROM facility WHERE owner_id = $1)', [targetId]);
 
-        // 3. Finally, delete the user account
+        // 3. Delete all facilities created by this user (if they are a host)
+        await pool.query('DELETE FROM facility WHERE owner_id = $1', [targetId]);
+
+        // 4. Finally, delete the user account
         const result = await pool.query(
             'DELETE FROM "user" WHERE id = $1 RETURNING id, username, email, phone_number, role',
             [targetId]

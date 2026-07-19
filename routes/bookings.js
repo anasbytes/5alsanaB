@@ -5,16 +5,6 @@ const authenticateToken = require('../middleware/authMiddleware');
 const { body, validationResult } = require('express-validator');
 const { sendPushNotification } = require('../utils/push');
 
-router.get('/', authenticateToken, async (req, res) => {
-    try {
-        const result = await pool.query('SELECT * FROM booking');
-        res.json(result.rows);
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-
 router.post('/', authenticateToken,
     body('facility_id').isInt().withMessage('Valid facility ID is required'),
     body('booking_date').isDate().withMessage('Valid date is required'),
@@ -28,17 +18,20 @@ router.post('/', authenticateToken,
         const { facility_id, booking_date, start_time, end_time } = req.body;
         const user_id = req.user.userId;
 
-        // 🛡️ RACE CONDITION PREVENTER: Checkout a dedicated client for a transaction
+        if (end_time <= start_time) {
+            return res.status(400).json({ error: 'End time must be after start time.' });
+        }
+        const today = new Date().toISOString().split('T')[0];
+        if (booking_date < today) {
+            return res.status(400).json({ error: 'Booking date cannot be in the past.' });
+        }
+
         const client = await pool.connect();
 
         try {
-            await client.query('BEGIN'); // Start transaction
-
-            // 🛡️ 1. Lock the facility row so concurrent requests for this specific facility must wait in line
+            await client.query('BEGIN');
             await client.query('SELECT id FROM facility WHERE id = $1 FOR UPDATE', [facility_id]);
 
-            // 🛡️ 2. Now perform the overlap check. If a concurrent request was waiting, 
-            // it will only run this query AFTER the first one commits, accurately seeing the new booking.
             const overlapCheck = await client.query(
                 `SELECT id FROM booking 
                  WHERE facility_id = $1 
@@ -49,20 +42,18 @@ router.post('/', authenticateToken,
             );
 
             if (overlapCheck.rows.length > 0) {
-                await client.query('ROLLBACK'); // Cancel transaction
+                await client.query('ROLLBACK');
                 return res.status(409).json({ error: 'Time slot is already booked or pending.' });
             }
 
-            // 🛡️ 3. Insert the booking safely
             const result = await client.query(
                 'INSERT INTO booking (user_id, facility_id, booking_date, start_time, end_time, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
                 [user_id, facility_id, booking_date, start_time, end_time, 'pending']
             );
             const booking = result.rows[0];
 
-            await client.query('COMMIT'); // 🛡️ Save everything and release the lock!
+            await client.query('COMMIT');
 
-            // 🛡️ 4. Do push notifications AFTER the commit so we don't hold the database lock while waiting on Expo's servers
             const facilityResult = await pool.query(
                 `SELECT f.name, u.push_token 
                  FROM facility f 
@@ -83,11 +74,11 @@ router.post('/', authenticateToken,
 
             res.status(201).json(booking);
         } catch (err) {
-            await client.query('ROLLBACK'); // Cancel everything if something breaks
+            await client.query('ROLLBACK');
             console.error(err);
             res.status(500).json({ error: 'Server error' });
         } finally {
-            client.release(); // Return the client to the pool
+            client.release();
         }
     }
 );
@@ -107,24 +98,6 @@ router.get('/:id', authenticateToken, async (req, res) => {
             return res.status(404).json({ error: 'Booking not found or unauthorized' });
         }
         res.json(result.rows[0]);
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-
-router.delete('/:id', authenticateToken, async (req, res) => {
-    const { id } = req.params;
-    const user_id = req.user.userId;
-    try {
-        const result = await pool.query(
-            'DELETE FROM booking WHERE id = $1 AND user_id = $2 RETURNING *',
-            [id, user_id]
-        );
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Booking not found or unauthorized' });
-        }
-        res.json({ message: 'Booking deleted', booking: result.rows[0] });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Server error' });

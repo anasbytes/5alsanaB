@@ -5,6 +5,7 @@ const authenticateToken = require('../middleware/authMiddleware');
 const { body, validationResult } = require('express-validator');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
@@ -14,7 +15,34 @@ const storage = multer.diskStorage({
         cb(null, Date.now() + path.extname(file.originalname));
     }
 });
-const upload = multer({ storage: storage });
+
+const upload = multer({
+    storage: storage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max
+    fileFilter: function (req, file, cb) {
+        const allowed = ['.jpg', '.jpeg', '.png', '.webp'];
+        if (!allowed.includes(path.extname(file.originalname).toLowerCase())) {
+            return cb(new Error('Only image files are allowed'));
+        }
+        cb(null, true);
+    }
+});
+
+function requireHost(req, res, next) {
+    if (req.user.role !== 'host') {
+        return res.status(403).json({ error: 'Only hosts can perform this action' });
+    }
+    next();
+}
+
+function deleteFile(imageUrl) {
+    if (!imageUrl) return;
+    const filename = imageUrl.split('/uploads/')[1];
+    if (!filename) return;
+    fs.unlink(path.join('uploads', filename), (err) => {
+        if (err) console.error('Failed to delete old image:', err);
+    });
+}
 
 router.get('/', async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
@@ -32,17 +60,13 @@ router.get('/', async (req, res) => {
     }
 });
 
-router.post('/', authenticateToken, upload.single('image'),
+router.post('/', authenticateToken, requireHost, upload.single('image'),
     body('name').trim().notEmpty().withMessage('Name is required'),
     body('type').trim().notEmpty().withMessage('Type is required'),
     body('type').isIn(['football', 'basketball', 'padel', 'ping pong', 'playstation']).withMessage('Invalid facility type'),
     body('location').trim().notEmpty().withMessage('Location is required'),
     body('price_per_hour').isFloat({ min: 0 }).withMessage('Valid price is required'),
     async (req, res) => {
-        if (req.user.role !== 'host') {
-            return res.status(403).json({ error: 'Only hosts can create facilities' });
-        }
-
         const errors = validationResult(req);
         if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
@@ -90,7 +114,7 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-router.put('/:id', authenticateToken, upload.single('image'),
+router.put('/:id', authenticateToken, requireHost, upload.single('image'),
     body('name').trim().notEmpty().withMessage('Name is required'),
     body('type').trim().notEmpty().withMessage('Type is required'),
     body('type').isIn(['football', 'basketball', 'padel', 'ping pong', 'playstation']).withMessage('Invalid facility type'),
@@ -114,6 +138,9 @@ router.put('/:id', authenticateToken, upload.single('image'),
                 [name, type, location, price_per_hour, image_url, latitude || null, longitude || null, description || null, id, req.user.userId]
             );
             if (result.rows.length === 0) return res.status(404).json({ error: 'Facility not found or unauthorized' });
+            if (req.file && existing_image_url) {
+                deleteFile(existing_image_url);
+            }
             res.json(result.rows[0]);
         } catch (err) {
             console.error(err);
