@@ -101,30 +101,38 @@ router.delete('/:id', authenticateToken, async (req, res) => {
         return res.status(403).json({ error: 'Unauthorized to delete this profile' });
     }
 
+    const client = await pool.connect();
     try {
+        await client.query('BEGIN');
+
         // 1. Delete all bookings made by this player
-        await pool.query('DELETE FROM booking WHERE user_id = $1', [targetId]);
+        await client.query('DELETE FROM booking WHERE user_id = $1', [targetId]);
 
         // 2. Delete all bookings made on facilities owned by this user (if they are a host)
-        await pool.query('DELETE FROM booking WHERE facility_id IN (SELECT id FROM facility WHERE owner_id = $1)', [targetId]);
+        await client.query('DELETE FROM booking WHERE facility_id IN (SELECT id FROM facility WHERE owner_id = $1)', [targetId]);
 
         // 3. Delete all facilities created by this user (if they are a host)
-        await pool.query('DELETE FROM facility WHERE owner_id = $1', [targetId]);
+        await client.query('DELETE FROM facility WHERE owner_id = $1', [targetId]);
 
         // 4. Finally, delete the user account
-        const result = await pool.query(
+        const result = await client.query(
             'DELETE FROM "user" WHERE id = $1 RETURNING id, username, email, phone_number, role',
             [targetId]
         );
 
         if (result.rows.length === 0) {
+            await client.query('ROLLBACK');
             return res.status(404).json({ error: 'User not found' });
         }
-        
+
+        await client.query('COMMIT');
         res.json({ message: 'User deleted', user: result.rows[0] });
     } catch (err) {
+        await client.query('ROLLBACK');
         console.error("Account deletion error:", err);
         res.status(500).json({ error: 'Server error' });
+    } finally {
+        client.release();
     }
 });
 
