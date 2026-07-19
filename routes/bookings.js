@@ -198,6 +198,13 @@ router.get('/host/me', authenticateToken, async (req, res) => {
     }
 });
 
+const VALID_TRANSITIONS = {
+    pending: ['confirmed', 'cancelled'],
+    confirmed: ['completed', 'cancelled'],
+    cancelled: [],
+    completed: []
+};
+
 router.put('/:id/status', authenticateToken,
     body('status').trim().notEmpty().withMessage('Status is required'),
     body('status').isIn(['pending', 'confirmed', 'cancelled', 'completed']).withMessage('Invalid status'),
@@ -210,6 +217,20 @@ router.put('/:id/status', authenticateToken,
         const { status } = req.body;
         const hostId = req.user.userId;
         try {
+            const current = await pool.query(
+                `SELECT b.status FROM booking b
+                 JOIN facility f ON b.facility_id = f.id
+                 WHERE b.id = $1 AND f.owner_id = $2`,
+                [id, hostId]
+            );
+            if (current.rows.length === 0) {
+                return res.status(404).json({ error: 'Booking not found or unauthorized' });
+            }
+            const currentStatus = current.rows[0].status;
+            if (!VALID_TRANSITIONS[currentStatus].includes(status)) {
+                return res.status(400).json({ error: `Cannot change status from ${currentStatus} to ${status}` });
+            }
+
             const result = await pool.query(
                 `UPDATE booking b
                  SET status = $1

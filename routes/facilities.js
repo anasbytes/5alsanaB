@@ -157,6 +157,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
             [id, req.user.userId]
         );
         if (result.rows.length === 0) return res.status(404).json({ error: 'Facility not found or unauthorized' });
+        deleteFile(result.rows[0].image_url);
         res.json({ message: 'Facility deactivated successfully', facility: result.rows[0] });
     } catch (err) {
         console.error(err);

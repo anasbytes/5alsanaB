@@ -4,6 +4,17 @@ const pool = require('../db');
 const bcrypt = require('bcrypt');
 const authenticateToken = require('../middleware/authMiddleware');
 const { body, validationResult } = require('express-validator');
+const fs = require('fs');
+const path = require('path');
+
+function deleteFile(imageUrl) {
+    if (!imageUrl) return;
+    const filename = imageUrl.split('/uploads/')[1];
+    if (!filename) return;
+    fs.unlink(path.join('uploads', filename), (err) => {
+        if (err) console.error('Failed to delete image:', err);
+    });
+}
 
 // Get a specific user (Secured: Users can only get their own data, or use 'me')
 router.get('/:id', authenticateToken, async (req, res) => {
@@ -112,6 +123,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
         await client.query('DELETE FROM booking WHERE facility_id IN (SELECT id FROM facility WHERE owner_id = $1)', [targetId]);
 
         // 3. Delete all facilities created by this user (if they are a host)
+        const ownedFacilities = await client.query('SELECT image_url FROM facility WHERE owner_id = $1', [targetId]);
         await client.query('DELETE FROM facility WHERE owner_id = $1', [targetId]);
 
         // 4. Finally, delete the user account
@@ -126,6 +138,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
         }
 
         await client.query('COMMIT');
+        ownedFacilities.rows.forEach(row => deleteFile(row.image_url));
         res.json({ message: 'User deleted', user: result.rows[0] });
     } catch (err) {
         await client.query('ROLLBACK');
