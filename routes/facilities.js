@@ -61,11 +61,29 @@ function deleteFile(imageUrl) {
 router.get('/', async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const offset = parseInt(req.query.offset) || 0;
+    const { type, search } = req.query;
+
+    const conditions = ['is_active = true'];
+    const params = [];
+    let paramIndex = 1;
+
+    if (type && type.toLowerCase() !== 'all') {
+        conditions.push(`LOWER(type) = LOWER($${paramIndex++})`);
+        params.push(type);
+    }
+
+    if (search && search.trim()) {
+        conditions.push(`(LOWER(name) LIKE LOWER($${paramIndex}) OR LOWER(location) LIKE LOWER($${paramIndex}))`);
+        params.push(`%${search.trim()}%`);
+        paramIndex++;
+    }
+
+    params.push(limit, offset);
 
     try {
         const result = await pool.query(
-            'SELECT * FROM facility WHERE is_active = true ORDER BY id DESC LIMIT $1 OFFSET $2',
-            [limit, offset]
+            `SELECT * FROM facility WHERE ${conditions.join(' AND ')} ORDER BY id DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`,
+            params
         );
         res.json(result.rows);
     } catch (err) {
@@ -87,7 +105,7 @@ router.post('/', authenticateToken, requireHost, handleUpload,
 
         const { name, type, location, price_per_hour, latitude, longitude, description } = req.body;
         const owner_id = req.user.userId;
-        
+
         let image_url = null;
         if (req.file) {
             image_url = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
@@ -139,7 +157,7 @@ router.put('/:id', authenticateToken, requireHost, handleUpload,
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-        
+
         const { id } = req.params;
         const { name, type, location, price_per_hour, existing_image_url, latitude, longitude, description } = req.body;
 
