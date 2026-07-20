@@ -73,8 +73,9 @@ router.get('/', async (req, res) => {
     }
 
     if (search && search.trim()) {
-        conditions.push(`(LOWER(name) LIKE LOWER($${paramIndex}) OR LOWER(location) LIKE LOWER($${paramIndex}))`);
-        params.push(`%${search.trim()}%`);
+        const escapedSearch = search.trim().replace(/[%_\\]/g, '\\$&');
+        conditions.push(`(LOWER(name) LIKE LOWER($${paramIndex}) ESCAPE '\\' OR LOWER(location) LIKE LOWER($${paramIndex}) ESCAPE '\\')`);
+        params.push(`%${escapedSearch}%`);
         paramIndex++;
     }
 
