@@ -43,12 +43,14 @@ const facilityRoutes = require('./routes/facilities');
 const userRoutes = require('./routes/users');
 const bookingRoutes = require('./routes/bookings');
 const authRoutes = require('./routes/auth');
+const favoritesRoutes = require('./routes/favorites');
 
 app.use('/facilities', facilityRoutes);
 app.use('/users', userRoutes);
 app.use('/bookings', bookingRoutes);
 app.use('/auth', authLimiter, authRoutes);
 app.use('/uploads', express.static('uploads'));
+app.use('/favorites', favoritesRoutes);
 
 app.get('/', (req, res) => {
     res.send('The 5alsana server is running!');
