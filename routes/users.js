@@ -120,7 +120,16 @@ router.delete('/:id', authenticateToken, async (req, res) => {
         await client.query('DELETE FROM booking WHERE user_id = $1', [targetId]);
 
         // 2. Delete all bookings made on facilities owned by this user (if they are a host)
+        // 2. Delete all bookings made on facilities owned by this user (if they are a host)
         await client.query('DELETE FROM booking WHERE facility_id IN (SELECT id FROM facility WHERE owner_id = $1)', [targetId]);
+
+        // 3. Delete all favorites by this user
+        await client.query('DELETE FROM favorite WHERE user_id = $1', [targetId]);
+
+        // 4. Delete all favorites on owned facilities
+        await client.query('DELETE FROM favorite WHERE facility_id IN (SELECT id FROM facility WHERE owner_id = $1)', [targetId]);
+
+        // 5. Delete all facilities created by this user (if they are a host)
 
         // 3. Delete all facilities created by this user (if they are a host)
         const ownedFacilities = await client.query('SELECT image_url FROM facility WHERE owner_id = $1', [targetId]);

@@ -1,74 +1,71 @@
 const express = require('express');
 const router = express.Router();
-const pool = require('../db'); // Adjust this path if your db connection file is named differently
-const authenticateToken = require('../middleware/auth'); // Adjust this path to your JWT middleware
+const pool = require('../db');
+const authenticateToken = require('../middleware/authMiddleware');
 
-// 1. Toggle Favorite (Add or Remove)
-router.post('/toggle/:facility_id', authenticateToken, async (req, res) => {
-    const userId = req.user.id;
-    const facilityId = req.params.facility_id;
+// Toggle favorite (add if not exists, remove if exists)
+router.post('/toggle/:facilityId', authenticateToken, async (req, res) => {
+    const userId = req.user.userId;
+    const { facilityId } = req.params;
 
     try {
-        // Check if it's already favorited
-        const checkFav = await pool.query(
-            'SELECT * FROM favorites WHERE user_id = $1 AND facility_id = $2',
+        const existing = await pool.query(
+            'SELECT id FROM favorite WHERE user_id = $1 AND facility_id = $2',
             [userId, facilityId]
         );
 
-        if (checkFav.rows.length > 0) {
-            // It exists! So we remove it (Unfavorite)
+        if (existing.rows.length > 0) {
             await pool.query(
-                'DELETE FROM favorites WHERE user_id = $1 AND facility_id = $2',
+                'DELETE FROM favorite WHERE user_id = $1 AND facility_id = $2',
                 [userId, facilityId]
             );
-            return res.json({ message: 'Removed from favorites', is_favorited: false });
+            return res.json({ is_favorited: false });
         } else {
-            // It doesn't exist! So we add it (Favorite)
             await pool.query(
-                'INSERT INTO favorites (user_id, facility_id) VALUES ($1, $2)',
+                'INSERT INTO favorite (user_id, facility_id) VALUES ($1, $2)',
                 [userId, facilityId]
             );
-            return res.status(201).json({ message: 'Added to favorites', is_favorited: true });
+            return res.status(201).json({ is_favorited: true });
         }
-    } catch (error) {
-        console.error('Error toggling favorite:', error);
-        res.status(500).json({ error: 'Server error toggling favorite' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Server error' });
     }
 });
 
-// 2. Get all Favorites for the logged-in user
+// Get all favorites for the logged-in user
 router.get('/', authenticateToken, async (req, res) => {
-    const userId = req.user.id;
+    const userId = req.user.userId;
 
     try {
         const result = await pool.query(
-            `SELECT f.*, fav.created_at as favorited_at 
-             FROM facilities f
-             JOIN favorites fav ON f.id = fav.facility_id
-             WHERE fav.user_id = $1
+            `SELECT f.*, fav.created_at AS favorited_at
+             FROM facility f
+             JOIN favorite fav ON f.id = fav.facility_id
+             WHERE fav.user_id = $1 AND f.is_active = true
              ORDER BY fav.created_at DESC`,
             [userId]
         );
         res.json(result.rows);
-    } catch (error) {
-        console.error('Error fetching favorites:', error);
-        res.status(500).json({ error: 'Server error fetching favorites' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Server error' });
     }
 });
 
-// 3. Check if a specific facility is favorited (useful for initial UI load)
-router.get('/check/:facility_id', authenticateToken, async (req, res) => {
-    const userId = req.user.id;
-    const facilityId = req.params.facility_id;
+// Check if a specific facility is favorited
+router.get('/check/:facilityId', authenticateToken, async (req, res) => {
+    const userId = req.user.userId;
+    const { facilityId } = req.params;
 
     try {
         const result = await pool.query(
-            'SELECT * FROM favorites WHERE user_id = $1 AND facility_id = $2',
+            'SELECT id FROM favorite WHERE user_id = $1 AND facility_id = $2',
             [userId, facilityId]
         );
         res.json({ is_favorited: result.rows.length > 0 });
-    } catch (error) {
-        console.error('Error checking favorite status:', error);
+    } catch (err) {
+        console.error(err);
         res.status(500).json({ error: 'Server error' });
     }
 });
