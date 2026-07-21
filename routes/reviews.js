@@ -19,7 +19,8 @@ router.post('/', authenticateToken,
         try {
             const bookingCheck = await pool.query(
                 `SELECT id FROM booking 
-                 WHERE id = $1 AND user_id = $2 AND facility_id = $3 AND status = 'completed'`,
+                 WHERE id = $1 AND user_id = $2 AND facility_id = $3
+                 AND (status = 'completed' OR booking_date < CURRENT_DATE OR (booking_date = CURRENT_DATE AND end_time < CURRENT_TIME))`,
                 [booking_id, userId, facility_id]
             );
 
