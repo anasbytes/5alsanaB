@@ -46,6 +46,8 @@ const authRoutes = require('./routes/auth');
 const favoritesRoutes = require('./routes/favorites');
 const reviewsRoutes = require('./routes/reviews');
 
+const { startScheduler } = require('./utils/scheduler');
+
 app.use('/facilities', facilityRoutes);
 app.use('/users', userRoutes);
 app.use('/bookings', bookingRoutes);
@@ -69,4 +71,5 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
     console.log(`Server is listening to ${PORT}`);
+    startScheduler();
 });
