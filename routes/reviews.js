@@ -73,6 +73,20 @@ router.get('/facility/:facilityId', async (req, res) => {
     }
 });
 
+router.get('/my-reviews', authenticateToken, async (req, res) => {
+    const userId = req.user.userId;
+    try {
+        const result = await pool.query(
+            'SELECT booking_id FROM review WHERE user_id = $1',
+            [userId]
+        );
+        res.json({ reviewed_booking_ids: result.rows.map(r => r.booking_id) });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
 router.get('/check/:bookingId', authenticateToken, async (req, res) => {
     const userId = req.user.userId;
     const { bookingId } = req.params;
