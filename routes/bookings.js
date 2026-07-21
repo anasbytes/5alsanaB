@@ -124,7 +124,8 @@ router.get('/player/me', authenticateToken, async (req, res) => {
         const result = await pool.query(
             `SELECT booking.*, facility.name AS facility_name, facility.type AS facility_type, 
                     facility.location AS facility_location, facility.image_url AS image_url,
-                    facility.price_per_hour AS price_per_hour
+                    facility.price_per_hour AS price_per_hour,
+                    (EXTRACT(EPOCH FROM (booking.end_time::time - booking.start_time::time)) / 3600) * facility.price_per_hour AS total_price
              FROM booking
              JOIN facility ON booking.facility_id = facility.id
              WHERE booking.user_id = $1
