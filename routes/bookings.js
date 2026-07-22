@@ -123,16 +123,18 @@ router.get('/player/me', authenticateToken, async (req, res) => {
     const userId = req.user.userId;
     try {
         const result = await pool.query(
-            `SELECT booking.*, facility.name AS facility_name, facility.type AS facility_type, 
-                    facility.location AS facility_location, facility.image_url AS image_url,
-                    facility.price_per_hour AS price_per_hour,
-                    (EXTRACT(EPOCH FROM (booking.end_time::time - booking.start_time::time)) / 3600) * facility.price_per_hour AS total_price
-             FROM booking
-             JOIN facility ON booking.facility_id = facility.id
-             WHERE booking.user_id = $1
-             ORDER BY booking.booking_date DESC, booking.start_time DESC`,
-            [userId]
-        );
+    `SELECT booking.*, facility.name AS facility_name, facility.type AS facility_type, 
+            facility.location AS facility_location, facility.price_per_hour AS price_per_hour,
+            (EXTRACT(EPOCH FROM (booking.end_time::time - booking.start_time::time)) / 3600) * facility.price_per_hour AS total_price,
+            COALESCE(json_agg(fi.image_url ORDER BY fi.display_order) FILTER (WHERE fi.image_url IS NOT NULL), '[]') AS images
+     FROM booking
+     JOIN facility ON booking.facility_id = facility.id
+     LEFT JOIN facility_image fi ON fi.facility_id = facility.id
+     WHERE booking.user_id = $1
+     GROUP BY booking.id, facility.name, facility.type, facility.location, facility.price_per_hour
+     ORDER BY booking.booking_date DESC, booking.start_time DESC`,
+    [userId]
+);
         res.json(result.rows);
     } catch (err) {
         console.error(err);
