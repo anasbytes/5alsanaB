@@ -135,7 +135,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
         // 5. Delete all facilities created by this user (if they are a host)
 
         // 3. Delete all facilities created by this user (if they are a host)
-        const ownedFacilities = await client.query('SELECT image_url FROM facility WHERE owner_id = $1', [targetId]);
+       const ownedFacilities = await client.query('SELECT fi.image_url FROM facility_image fi JOIN facility f ON fi.facility_id = f.id WHERE f.owner_id = $1', [targetId]);
         await client.query('DELETE FROM facility WHERE owner_id = $1', [targetId]);
 
         // 4. Finally, delete the user account
