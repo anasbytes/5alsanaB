@@ -20,12 +20,12 @@ const upload = multer({
     storage: storage,
     limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max
     fileFilter: function (req, file, cb) {
-        const allowed = ['.jpg', '.jpeg', '.png', '.webp'];
-        if (!allowed.includes(path.extname(file.originalname).toLowerCase())) {
-            return cb(new Error('Only image files are allowed'));
-        }
-        cb(null, true);
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg', 'image/heic', 'image/heif'];
+    if (!allowed.includes(file.mimetype)) {
+        return cb(new Error('Only image files are allowed'));
     }
+    cb(null, true);
+}
 });
 
 function requireHost(req, res, next) {
@@ -138,7 +138,15 @@ router.post('/', authenticateToken, requireHost, handleUpload,
 router.get('/owner/me', authenticateToken, async (req, res) => {
     const ownerId = req.user.userId;
     try {
-        const result = await pool.query('SELECT * FROM facility WHERE owner_id = $1 AND is_active = true ORDER BY id DESC', [ownerId]);
+        const result = await pool.query(
+            `SELECT f.*, COALESCE(json_agg(fi.image_url ORDER BY fi.display_order) FILTER (WHERE fi.image_url IS NOT NULL), '[]') AS images
+             FROM facility f
+             LEFT JOIN facility_image fi ON fi.facility_id = f.id
+             WHERE f.owner_id = $1 AND f.is_active = true
+             GROUP BY f.id
+             ORDER BY f.id DESC`,
+            [ownerId]
+        );
         res.json(result.rows);
     } catch (err) {
         console.error(err);
@@ -181,25 +189,34 @@ router.put('/:id', authenticateToken, requireHost, handleUpload,
 
         const newImageUrls = (req.files || []).map(f => `${req.protocol}://${req.get('host')}/uploads/${f.filename}`);
 
-        try {
+       try {
     const result = await pool.query(
         'UPDATE facility SET name = $1, type = $2, location = $3, price_per_hour = $4, latitude = $5, longitude = $6, description = $7 WHERE id = $8 AND owner_id = $9 AND is_active = true RETURNING *',
         [name, type, location, price_per_hour, latitude || null, longitude || null, description || null, id, req.user.userId]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Facility not found or unauthorized' });
-    if (newImageUrls.length > 0) {
-        const existing = await pool.query('SELECT image_url FROM facility_image WHERE facility_id = $1', [id]);
-        for (const row of existing.rows) deleteFile(row.image_url);
-        await pool.query('DELETE FROM facility_image WHERE facility_id = $1', [id]);
-        for (let i = 0; i < newImageUrls.length; i++) {
-            await pool.query(
-                'INSERT INTO facility_image (facility_id, image_url, display_order) VALUES ($1, $2, $3)',
-                [id, newImageUrls[i], i]
-            );
-        }
+
+    const newImageUrls = (req.files || []).map(f => `${req.protocol}://${req.get('host')}/uploads/${f.filename}`);
+    const existingImages = JSON.parse(req.body.existing_images || '[]');
+
+    const currentImages = await pool.query('SELECT image_url FROM facility_image WHERE facility_id = $1', [id]);
+    const currentUrls = currentImages.rows.map(r => r.image_url);
+    const toDelete = currentUrls.filter(url => !existingImages.includes(url));
+    for (const url of toDelete) deleteFile(url);
+    if (toDelete.length > 0) {
+        await pool.query('DELETE FROM facility_image WHERE facility_id = $1 AND image_url = ANY($2)', [id, toDelete]);
     }
+
+    let nextOrder = existingImages.length;
+    for (let i = 0; i < newImageUrls.length; i++) {
+        await pool.query(
+            'INSERT INTO facility_image (facility_id, image_url, display_order) VALUES ($1, $2, $3)',
+            [id, newImageUrls[i], nextOrder++]
+        );
+    }
+
     res.json(result.rows[0]);
-} catch (err) {
+}catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
 }
