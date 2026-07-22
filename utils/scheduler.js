@@ -55,6 +55,27 @@ function startScheduler() {
         }
     });
 
+    cron.schedule('* * * * *', async () => {
+    try {
+        await pool.query(
+            `UPDATE booking
+             SET status = 'active'
+             WHERE status = 'confirmed'
+             AND (booking_date::date + start_time::time) <= NOW()
+             AND (booking_date::date + end_time::time) > NOW()`
+        );
+
+        await pool.query(
+            `UPDATE booking
+             SET status = 'completed'
+             WHERE status IN ('confirmed', 'active')
+             AND (booking_date::date + end_time::time) <= NOW()`
+        );
+    } catch (err) {
+        console.error('[Scheduler] Error updating booking statuses:', err);
+    }
+});
+
     console.log('[Scheduler] Booking reminder scheduler started.');
 }
 
