@@ -20,12 +20,12 @@ const upload = multer({
     storage: storage,
     limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max
     fileFilter: function (req, file, cb) {
-    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg', 'image/heic', 'image/heif'];
-    if (!allowed.includes(file.mimetype)) {
-        return cb(new Error('Only image files are allowed'));
+        const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg', 'image/heic', 'image/heif'];
+        if (!allowed.includes(file.mimetype)) {
+            return cb(new Error('Only image files are allowed'));
+        }
+        cb(null, true);
     }
-    cb(null, true);
-}
 });
 
 function requireHost(req, res, next) {
@@ -82,15 +82,15 @@ router.get('/', async (req, res) => {
     params.push(limit, offset);
 
     try {
-       const result = await pool.query(
-    `SELECT f.*, COALESCE(json_agg(fi.image_url ORDER BY fi.display_order) FILTER (WHERE fi.image_url IS NOT NULL), '[]') AS images
+        const result = await pool.query(
+            `SELECT f.*, COALESCE(json_agg(fi.image_url ORDER BY fi.display_order) FILTER (WHERE fi.image_url IS NOT NULL), '[]') AS images
      FROM facility f
      LEFT JOIN facility_image fi ON fi.facility_id = f.id
      WHERE ${conditions.join(' AND ')}
      GROUP BY f.id
      ORDER BY f.id DESC
      LIMIT $${paramIndex++} OFFSET $${paramIndex++}`,
-    params
+            params
         );
         res.json(result.rows);
     } catch (err) {
@@ -116,22 +116,22 @@ router.post('/', authenticateToken, requireHost, handleUpload,
         const imageUrls = (req.files || []).map(f => `${req.protocol}://${req.get('host')}/uploads/${f.filename}`);
 
         try {
-    const result = await pool.query(
-        'INSERT INTO facility (name, type, location, price_per_hour, owner_id, is_active, latitude, longitude, description) VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8) RETURNING *',
-        [name, type, location, price_per_hour, owner_id, latitude || null, longitude || null, description || null]
-    );
-    const facility = result.rows[0];
-    for (let i = 0; i < imageUrls.length; i++) {
-        await pool.query(
-            'INSERT INTO facility_image (facility_id, image_url, display_order) VALUES ($1, $2, $3)',
-            [facility.id, imageUrls[i], i]
-        );
-    }
-    res.status(201).json(facility);
-} catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
-}
+            const result = await pool.query(
+                'INSERT INTO facility (name, type, location, price_per_hour, owner_id, is_active, latitude, longitude, description) VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8) RETURNING *',
+                [name, type, location, price_per_hour, owner_id, latitude || null, longitude || null, description || null]
+            );
+            const facility = result.rows[0];
+            for (let i = 0; i < imageUrls.length; i++) {
+                await pool.query(
+                    'INSERT INTO facility_image (facility_id, image_url, display_order) VALUES ($1, $2, $3)',
+                    [facility.id, imageUrls[i], i]
+                );
+            }
+            res.status(201).json(facility);
+        } catch (err) {
+            console.error(err);
+            res.status(500).json({ error: 'Server error' });
+        }
     }
 );
 
@@ -158,15 +158,15 @@ router.get('/:id', async (req, res) => {
     const { id } = req.params;
     try {
         const result = await pool.query(
-    `SELECT f.*, COALESCE(json_agg(fi.image_url ORDER BY fi.display_order) FILTER (WHERE fi.image_url IS NOT NULL), '[]') AS images
+            `SELECT f.*, COALESCE(json_agg(fi.image_url ORDER BY fi.display_order) FILTER (WHERE fi.image_url IS NOT NULL), '[]') AS images
      FROM facility f
      LEFT JOIN facility_image fi ON fi.facility_id = f.id
      WHERE f.id = $1
      GROUP BY f.id`,
-    [id]
-);
-if (result.rows.length === 0) return res.status(404).json({ error: 'Facility not found' });
-res.json(result.rows[0]);
+            [id]
+        );
+        if (result.rows.length === 0) return res.status(404).json({ error: 'Facility not found' });
+        res.json(result.rows[0]);
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Server error' });
@@ -185,41 +185,41 @@ router.put('/:id', authenticateToken, requireHost, handleUpload,
         if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
         const { id } = req.params;
-        const { name, type, location, price_per_hour, existing_image_url, latitude, longitude, description } = req.body;
+        const { name, type, location, price_per_hour, latitude, longitude, description } = req.body;
 
         const newImageUrls = (req.files || []).map(f => `${req.protocol}://${req.get('host')}/uploads/${f.filename}`);
 
-       try {
-    const result = await pool.query(
-        'UPDATE facility SET name = $1, type = $2, location = $3, price_per_hour = $4, latitude = $5, longitude = $6, description = $7 WHERE id = $8 AND owner_id = $9 AND is_active = true RETURNING *',
-        [name, type, location, price_per_hour, latitude || null, longitude || null, description || null, id, req.user.userId]
-    );
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Facility not found or unauthorized' });
+        try {
+            const result = await pool.query(
+                'UPDATE facility SET name = $1, type = $2, location = $3, price_per_hour = $4, latitude = $5, longitude = $6, description = $7 WHERE id = $8 AND owner_id = $9 AND is_active = true RETURNING *',
+                [name, type, location, price_per_hour, latitude || null, longitude || null, description || null, id, req.user.userId]
+            );
+            if (result.rows.length === 0) return res.status(404).json({ error: 'Facility not found or unauthorized' });
 
-    const newImageUrls = (req.files || []).map(f => `${req.protocol}://${req.get('host')}/uploads/${f.filename}`);
-    const existingImages = JSON.parse(req.body.existing_images || '[]');
+            const newImageUrls = (req.files || []).map(f => `${req.protocol}://${req.get('host')}/uploads/${f.filename}`);
+            const existingImages = JSON.parse(req.body.existing_images || '[]');
 
-    const currentImages = await pool.query('SELECT image_url FROM facility_image WHERE facility_id = $1', [id]);
-    const currentUrls = currentImages.rows.map(r => r.image_url);
-    const toDelete = currentUrls.filter(url => !existingImages.includes(url));
-    for (const url of toDelete) deleteFile(url);
-    if (toDelete.length > 0) {
-        await pool.query('DELETE FROM facility_image WHERE facility_id = $1 AND image_url = ANY($2)', [id, toDelete]);
-    }
+            const currentImages = await pool.query('SELECT image_url FROM facility_image WHERE facility_id = $1', [id]);
+            const currentUrls = currentImages.rows.map(r => r.image_url);
+            const toDelete = currentUrls.filter(url => !existingImages.includes(url));
+            for (const url of toDelete) deleteFile(url);
+            if (toDelete.length > 0) {
+                await pool.query('DELETE FROM facility_image WHERE facility_id = $1 AND image_url = ANY($2)', [id, toDelete]);
+            }
 
-    let nextOrder = existingImages.length;
-    for (let i = 0; i < newImageUrls.length; i++) {
-        await pool.query(
-            'INSERT INTO facility_image (facility_id, image_url, display_order) VALUES ($1, $2, $3)',
-            [id, newImageUrls[i], nextOrder++]
-        );
-    }
+            let nextOrder = existingImages.length;
+            for (let i = 0; i < newImageUrls.length; i++) {
+                await pool.query(
+                    'INSERT INTO facility_image (facility_id, image_url, display_order) VALUES ($1, $2, $3)',
+                    [id, newImageUrls[i], nextOrder++]
+                );
+            }
 
-    res.json(result.rows[0]);
-}catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
-}
+            res.json(result.rows[0]);
+        } catch (err) {
+            console.error(err);
+            res.status(500).json({ error: 'Server error' });
+        }
     }
 );
 
@@ -231,7 +231,8 @@ router.delete('/:id', authenticateToken, async (req, res) => {
             [id, req.user.userId]
         );
         if (result.rows.length === 0) return res.status(404).json({ error: 'Facility not found or unauthorized' });
-        deleteFile(result.rows[0].image_url);
+        const imgs = await pool.query('SELECT image_url FROM facility_image WHERE facility_id = $1', [id]);
+        for (const row of imgs.rows) deleteFile(row.image_url);
         res.json({ message: 'Facility deactivated successfully', facility: result.rows[0] });
     } catch (err) {
         console.error(err);
