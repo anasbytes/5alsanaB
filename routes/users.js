@@ -126,6 +126,9 @@ router.delete('/:id', authenticateToken, async (req, res) => {
         // 3. Delete all favorites by this user
         await client.query('DELETE FROM favorite WHERE user_id = $1', [targetId]);
 
+        // 4. Delete all waitlist entries by this user
+        await client.query('DELETE FROM waitlist WHERE user_id = $1', [targetId]);
+
         // 4. Delete all favorites on owned facilities
         await client.query('DELETE FROM favorite WHERE facility_id IN (SELECT id FROM facility WHERE owner_id = $1)', [targetId]);
 

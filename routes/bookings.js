@@ -4,6 +4,7 @@ const pool = require('../db');
 const authenticateToken = require('../middleware/authMiddleware');
 const { body, validationResult } = require('express-validator');
 const { sendPushNotification } = require('../utils/push');
+const { notifyWaitlist } = require('./waitlist');
 
 router.post('/', authenticateToken,
     body('facility_id').isInt().withMessage('Valid facility ID is required'),
@@ -171,6 +172,8 @@ router.put('/:bookingId/cancel', authenticateToken, async (req, res) => {
         }
 
         res.json(booking);
+
+        notifyWaitlist(booking.facility_id, booking.booking_date, booking.start_time, booking.end_time);
     } catch (err) {
         console.error('Cancel Error:', err);
         res.status(500).json({ error: 'Server error' });
@@ -261,6 +264,10 @@ router.put('/:id/status', authenticateToken,
             }
 
             res.json(booking);
+
+            if (status === 'cancelled') {
+                notifyWaitlist(booking.facility_id, booking.booking_date, booking.start_time, booking.end_time);
+            }
         } catch (err) {
             console.error(err);
             res.status(500).json({ error: 'Server error updating status.' });

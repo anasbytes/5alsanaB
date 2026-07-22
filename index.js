@@ -45,6 +45,7 @@ const bookingRoutes = require('./routes/bookings');
 const authRoutes = require('./routes/auth');
 const favoritesRoutes = require('./routes/favorites');
 const reviewsRoutes = require('./routes/reviews');
+const { router: waitlistRoutes } = require('./routes/waitlist');
 
 const { startScheduler } = require('./utils/scheduler');
 
@@ -55,6 +56,7 @@ app.use('/auth', authLimiter, authRoutes);
 app.use('/uploads', express.static('uploads'));
 app.use('/favorites', favoritesRoutes);
 app.use('/reviews', reviewsRoutes);
+app.use('/waitlist', waitlistRoutes);
 
 app.get('/', (req, res) => {
     res.send('The 5alsana server is running!');
