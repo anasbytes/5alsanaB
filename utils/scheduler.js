@@ -56,25 +56,49 @@ function startScheduler() {
     });
 
     cron.schedule('* * * * *', async () => {
-    try {
-        await pool.query(
-            `UPDATE booking
-             SET status = 'active'
-             WHERE status = 'confirmed'
-             AND (booking_date::date + start_time::time) <= NOW()
-             AND (booking_date::date + end_time::time) > NOW()`
-        );
+        try {
+            const activated = await pool.query(
+                `UPDATE booking
+                 SET status = 'active'
+                 WHERE status = 'confirmed'
+                 AND (booking_date::date + start_time::time) <= NOW()
+                 AND (booking_date::date + end_time::time) > NOW()
+                 RETURNING id, facility_id, user_id`
+            );
 
-        await pool.query(
-            `UPDATE booking
-             SET status = 'completed'
-             WHERE status IN ('confirmed', 'active')
-             AND (booking_date::date + end_time::time) <= NOW()`
-        );
-    } catch (err) {
-        console.error('[Scheduler] Error updating booking statuses:', err);
-    }
-});
+            await pool.query(
+                `UPDATE booking
+                 SET status = 'completed'
+                 WHERE status IN ('confirmed', 'active')
+                 AND (booking_date::date + end_time::time) <= NOW()`
+            );
+
+            for (const booking of activated.rows) {
+                try {
+                    const hostResult = await pool.query(
+                        `SELECT u.push_token, f.name AS facility_name
+                         FROM facility f
+                         JOIN "user" u ON u.id = f.owner_id
+                         WHERE f.id = $1 AND u.push_token IS NOT NULL`,
+                        [booking.facility_id]
+                    );
+                    if (hostResult.rows.length > 0) {
+                        const { push_token, facility_name } = hostResult.rows[0];
+                        await sendPushNotification(
+                            push_token,
+                            '🟢 Booking Started',
+                            `A booking at ${facility_name} is now active.`,
+                            { route: 'HostBookings' }
+                        );
+                    }
+                } catch (err) {
+                    console.error(`[Scheduler] Failed to notify host for booking #${booking.id}:`, err);
+                }
+            }
+        } catch (err) {
+            console.error('[Scheduler] Error updating booking statuses:', err);
+        }
+    });
 
     console.log('[Scheduler] Booking reminder scheduler started.');
 }
