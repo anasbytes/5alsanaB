@@ -16,6 +16,22 @@ function deleteFile(imageUrl) {
     });
 }
 
+const multer = require('multer');
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, 'uploads/'),
+    filename: (req, file, cb) => cb(null, `${Date.now()}${path.extname(file.originalname)}`)
+});
+
+const upload = multer({
+    storage,
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg', 'image/heic', 'image/heif'];
+        allowed.includes(file.mimetype) ? cb(null, true) : cb(new Error('Only image files are allowed'));
+    }
+});
+
 // Get a specific user (Secured: Users can only get their own data, or use 'me')
 router.get('/:id', authenticateToken, async (req, res) => {
     let targetId = req.params.id;
