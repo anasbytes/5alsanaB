@@ -83,9 +83,13 @@ router.get('/', async (req, res) => {
 
     try {
         const result = await pool.query(
-            `SELECT f.*, COALESCE(json_agg(fi.image_url ORDER BY fi.display_order) FILTER (WHERE fi.image_url IS NOT NULL), '[]') AS images
+            `SELECT f.*, 
+        COALESCE(json_agg(fi.image_url ORDER BY fi.display_order) FILTER (WHERE fi.image_url IS NOT NULL), '[]') AS images,
+        ROUND(AVG(r.rating)::numeric, 1) AS avg_rating,
+        COUNT(r.id) AS review_count
      FROM facility f
      LEFT JOIN facility_image fi ON fi.facility_id = f.id
+     LEFT JOIN review r ON r.facility_id = f.id
      WHERE ${conditions.join(' AND ')}
      GROUP BY f.id
      ORDER BY f.id DESC
@@ -139,12 +143,15 @@ router.get('/owner/me', authenticateToken, async (req, res) => {
     const ownerId = req.user.userId;
     try {
         const result = await pool.query(
-            `SELECT f.*, COALESCE(json_agg(fi.image_url ORDER BY fi.display_order) FILTER (WHERE fi.image_url IS NOT NULL), '[]') AS images
-             FROM facility f
-             LEFT JOIN facility_image fi ON fi.facility_id = f.id
-             WHERE f.owner_id = $1 AND f.is_active = true
-             GROUP BY f.id
-             ORDER BY f.id DESC`,
+            `SELECT f.*, COALESCE(json_agg(fi.image_url ORDER BY fi.display_order) FILTER (WHERE fi.image_url IS NOT NULL), '[]') AS images,
+        ROUND(AVG(r.rating)::numeric, 1) AS avg_rating,
+        COUNT(r.id) AS review_count
+     FROM facility f
+     LEFT JOIN facility_image fi ON fi.facility_id = f.id
+     LEFT JOIN review r ON r.facility_id = f.id
+     WHERE f.owner_id = $1 AND f.is_active = true
+     GROUP BY f.id
+     ORDER BY f.id DESC`,
             [ownerId]
         );
         res.json(result.rows);
@@ -158,9 +165,13 @@ router.get('/:id', async (req, res) => {
     const { id } = req.params;
     try {
         const result = await pool.query(
-            `SELECT f.*, COALESCE(json_agg(fi.image_url ORDER BY fi.display_order) FILTER (WHERE fi.image_url IS NOT NULL), '[]') AS images
+            `SELECT f.*, 
+        COALESCE(json_agg(fi.image_url ORDER BY fi.display_order) FILTER (WHERE fi.image_url IS NOT NULL), '[]') AS images,
+        ROUND(AVG(r.rating)::numeric, 1) AS avg_rating,
+        COUNT(r.id) AS review_count
      FROM facility f
      LEFT JOIN facility_image fi ON fi.facility_id = f.id
+     LEFT JOIN review r ON r.facility_id = f.id
      WHERE f.id = $1
      GROUP BY f.id`,
             [id]
