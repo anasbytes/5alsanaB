@@ -8,6 +8,7 @@ const { notifyWaitlist } = require('./waitlist');
 
 router.post('/', authenticateToken,
     body('facility_id').isInt().withMessage('Valid facility ID is required'),
+    body('room_id').isInt().withMessage('Valid room ID is required'),
     body('booking_date').isDate().withMessage('Valid date is required'),
     body('start_time').notEmpty().withMessage('Start time is required'),
     body('end_time').notEmpty().withMessage('End time is required'),
@@ -16,7 +17,7 @@ router.post('/', authenticateToken,
         if (!errors.isEmpty()) {
             return res.status(400).json({ errors: errors.array() });
         }
-        const { facility_id, booking_date, start_time, end_time } = req.body;
+        const { facility_id, room_id, booking_date, start_time, end_time } = req.body;
         const user_id = req.user.userId;
 
         if (end_time <= start_time) {
@@ -33,13 +34,22 @@ router.post('/', authenticateToken,
             await client.query('BEGIN');
             await client.query('SELECT id FROM facility WHERE id = $1 FOR UPDATE', [facility_id]);
 
+            const roomCheck = await pool.query(
+                'SELECT id FROM room WHERE id = $1 AND facility_id = $2 AND is_active = true',
+                [room_id, facility_id]
+            );
+            if (roomCheck.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ error: 'Room not found or does not belong to this facility.' });
+            }
+
             const overlapCheck = await client.query(
-                `SELECT id FROM booking 
-                 WHERE facility_id = $1 
-                 AND booking_date = $2 
+                `SELECT id FROM booking
+                 WHERE room_id = $1
+                 AND booking_date = $2
                  AND status IN ('confirmed', 'pending')
                  AND (start_time < $4 AND end_time > $3)`,
-                [facility_id, booking_date, start_time, end_time]
+                [room_id, booking_date, start_time, end_time]
             );
 
             if (overlapCheck.rows.length > 0) {
@@ -48,8 +58,8 @@ router.post('/', authenticateToken,
             }
 
             const result = await client.query(
-                'INSERT INTO booking (user_id, facility_id, booking_date, start_time, end_time, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-                [user_id, facility_id, booking_date, start_time, end_time, 'pending']
+                'INSERT INTO booking (user_id, facility_id, room_id, booking_date, start_time, end_time, status) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+                [user_id, facility_id, room_id, booking_date, start_time, end_time, 'pending']
             );
             const booking = result.rows[0];
 
@@ -107,11 +117,15 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
 router.get('/facility/:facilityId', authenticateToken, async (req, res) => {
     const { facilityId } = req.params;
+    const { room_id } = req.query;
     try {
-        const result = await pool.query(
-            "SELECT * FROM booking WHERE facility_id = $1 AND booking_date >= CURRENT_DATE AND status IN ('confirmed', 'pending')",
-            [facilityId]
-        );
+        const params = [facilityId];
+        let query = "SELECT * FROM booking WHERE facility_id = $1 AND booking_date >= CURRENT_DATE AND status IN ('confirmed', 'pending')";
+        if (room_id) {
+            params.push(room_id);
+            query += ` AND room_id = $2`;
+        }
+        const result = await pool.query(query, params);
         res.json(result.rows);
     } catch (err) {
         console.error(err);
@@ -123,18 +137,20 @@ router.get('/player/me', authenticateToken, async (req, res) => {
     const userId = req.user.userId;
     try {
         const result = await pool.query(
-    `SELECT booking.*, facility.name AS facility_name, facility.type AS facility_type, 
-            facility.location AS facility_location, facility.price_per_hour AS price_per_hour,
-            (EXTRACT(EPOCH FROM (booking.end_time::time - booking.start_time::time)) / 3600) * facility.price_per_hour AS total_price,
+            `SELECT booking.*, facility.name AS facility_name, facility.type AS facility_type,
+            facility.location AS facility_location,
+            room.name AS room_name, room.price_per_hour AS price_per_hour,
+            (EXTRACT(EPOCH FROM (booking.end_time::time - booking.start_time::time)) / 3600) * room.price_per_hour AS total_price,
             COALESCE(json_agg(fi.image_url ORDER BY fi.display_order) FILTER (WHERE fi.image_url IS NOT NULL), '[]') AS images
      FROM booking
      JOIN facility ON booking.facility_id = facility.id
+     LEFT JOIN room ON booking.room_id = room.id
      LEFT JOIN facility_image fi ON fi.facility_id = facility.id
      WHERE booking.user_id = $1
-     GROUP BY booking.id, facility.name, facility.type, facility.location, facility.price_per_hour
+     GROUP BY booking.id, facility.name, facility.type, facility.location, room.name, room.price_per_hour
      ORDER BY booking.booking_date DESC, booking.start_time DESC`,
-    [userId]
-);
+            [userId]
+        );
         res.json(result.rows);
     } catch (err) {
         console.error(err);
@@ -187,11 +203,13 @@ router.get('/host/me', authenticateToken, async (req, res) => {
     try {
         const result = await pool.query(
             `SELECT b.id, b.booking_date, b.start_time, b.end_time, b.status,
-                    f.name AS facility_name, f.price_per_hour,
+                    f.name AS facility_name,
+                    r.name AS room_name, r.price_per_hour,
                     u.username AS player_name,
-                    (EXTRACT(EPOCH FROM (b.end_time::time - b.start_time::time)) / 3600) * f.price_per_hour AS total_price
+                    (EXTRACT(EPOCH FROM (b.end_time::time - b.start_time::time)) / 3600) * r.price_per_hour AS total_price
              FROM booking b
              JOIN facility f ON b.facility_id = f.id
+             LEFT JOIN room r ON b.room_id = r.id
              JOIN "user" u ON b.user_id = u.id
              WHERE f.owner_id = $1
              ORDER BY b.booking_date DESC, b.start_time DESC`,

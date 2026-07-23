@@ -48,6 +48,8 @@ const reviewsRoutes = require('./routes/reviews');
 const { router: waitlistRoutes } = require('./routes/waitlist');
 
 const { startScheduler } = require('./utils/scheduler');
+const roomsRouter = require('./routes/rooms');
+
 
 app.use('/facilities', facilityRoutes);
 app.use('/users', userRoutes);
@@ -57,6 +59,7 @@ app.use('/uploads', express.static('uploads'));
 app.use('/favorites', favoritesRoutes);
 app.use('/reviews', reviewsRoutes);
 app.use('/waitlist', waitlistRoutes);
+app.use('/rooms', roomsRouter);
 
 app.get('/', (req, res) => {
     res.send('The 5alsana server is running!');
