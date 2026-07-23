@@ -28,7 +28,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
     try {
         const result = await pool.query(
-            'SELECT id, username, email, phone_number, role FROM "user" WHERE id = $1',
+            'SELECT id, username, email, phone_number, role, avatar_url FROM "user" WHERE id = $1',
             [targetId]
         );
         if (result.rows.length === 0) {
@@ -42,7 +42,12 @@ router.get('/:id', authenticateToken, async (req, res) => {
 });
 
 // Update a user (Secured: Users can only update their own profile)
-router.put('/:id', authenticateToken,
+router.put('/:id', authenticateToken, (req, res, next) => {
+    upload.single('avatar')(req, res, (err) => {
+        if (err) return res.status(400).json({ error: err.message });
+        next();
+    });
+},
     body('username').optional().trim().toLowerCase().notEmpty().isLength({ max: 50 }).withMessage('Username cannot be empty and must be under 50 characters'),
     body('email').optional({ checkFalsy: true }).isEmail().normalizeEmail().withMessage('Invalid email format'),
     body('phone_number').optional().notEmpty().isLength({ max: 20 }).withMessage('Phone number cannot be empty and must be under 20 characters'),
@@ -78,13 +83,21 @@ router.put('/:id', authenticateToken,
                 values.push(hashedPassword);
             }
 
+            if (req.file) {
+                const avatarUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+                const existing = await pool.query('SELECT avatar_url FROM "user" WHERE id = $1', [targetId]);
+                if (existing.rows[0]?.avatar_url) deleteFile(existing.rows[0].avatar_url);
+                fields.push(`avatar_url = $${index++}`);
+                values.push(avatarUrl);
+            }
+
             if (fields.length === 0) {
                 return res.status(400).json({ error: 'No fields to update' });
             }
 
             values.push(targetId);
             const result = await pool.query(
-                `UPDATE "user" SET ${fields.join(', ')} WHERE id = $${index} RETURNING id, username, email, phone_number, role`,
+                `UPDATE "user" SET ${fields.join(', ')} WHERE id = $${index} RETURNING id, username, email, phone_number, role, avatar_url`,
                 values
             );
 
@@ -116,29 +129,17 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        // 1. Delete all bookings made by this player
         await client.query('DELETE FROM booking WHERE user_id = $1', [targetId]);
-
-        // 2. Delete all bookings made on facilities owned by this user (if they are a host)
-        // 2. Delete all bookings made on facilities owned by this user (if they are a host)
         await client.query('DELETE FROM booking WHERE facility_id IN (SELECT id FROM facility WHERE owner_id = $1)', [targetId]);
-
-        // 3. Delete all favorites by this user
         await client.query('DELETE FROM favorite WHERE user_id = $1', [targetId]);
-
-        // 4. Delete all waitlist entries by this user
         await client.query('DELETE FROM waitlist WHERE user_id = $1', [targetId]);
-
-        // 4. Delete all favorites on owned facilities
         await client.query('DELETE FROM favorite WHERE facility_id IN (SELECT id FROM facility WHERE owner_id = $1)', [targetId]);
 
-        // 5. Delete all facilities created by this user (if they are a host)
-
-        // 3. Delete all facilities created by this user (if they are a host)
-       const ownedFacilities = await client.query('SELECT fi.image_url FROM facility_image fi JOIN facility f ON fi.facility_id = f.id WHERE f.owner_id = $1', [targetId]);
+        const ownedFacilities = await client.query('SELECT fi.image_url FROM facility_image fi JOIN facility f ON fi.facility_id = f.id WHERE f.owner_id = $1', [targetId]);
         await client.query('DELETE FROM facility WHERE owner_id = $1', [targetId]);
 
-        // 4. Finally, delete the user account
+        const userRow = await client.query('SELECT avatar_url FROM "user" WHERE id = $1', [targetId]);
+
         const result = await client.query(
             'DELETE FROM "user" WHERE id = $1 RETURNING id, username, email, phone_number, role',
             [targetId]
@@ -151,6 +152,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 
         await client.query('COMMIT');
         ownedFacilities.rows.forEach(row => deleteFile(row.image_url));
+        if (userRow.rows[0]?.avatar_url) deleteFile(userRow.rows[0].avatar_url);
         res.json({ message: 'User deleted', user: result.rows[0] });
     } catch (err) {
         await client.query('ROLLBACK');
