@@ -43,6 +43,22 @@ router.post('/', authenticateToken,
                 return res.status(404).json({ error: 'Room not found or does not belong to this facility.' });
             }
 
+            const blockCheck = await client.query(
+                `SELECT id FROM blocked_slot
+                 WHERE facility_id = $1
+                 AND blocked_date = $2
+                 AND (room_id IS NULL OR room_id = $3)
+                 AND (
+                   is_full_day = true
+                   OR (start_time < $5 AND end_time > $4)
+                 )`,
+                [facility_id, booking_date, room_id, start_time, end_time]
+            );
+            if (blockCheck.rows.length > 0) {
+                await client.query('ROLLBACK');
+                return res.status(409).json({ error: 'This slot is blocked by the host.' });
+            }
+
             const overlapCheck = await client.query(
                 `SELECT id FROM booking
                  WHERE room_id = $1
