@@ -205,11 +205,11 @@ router.put('/:bookingId/cancel', authenticateToken, async (req, res) => {
     const userId = req.user.userId;
     try {
         const result = await pool.query(
-            "UPDATE booking SET status = 'cancelled' WHERE id = $1 AND user_id = $2 RETURNING *",
+            "UPDATE booking SET status = 'cancelled' WHERE id = $1 AND user_id = $2 AND status IN ('pending', 'confirmed', 'active') RETURNING *",
             [bookingId, userId]
         );
         if (result.rowCount === 0) {
-            return res.status(404).json({ error: 'Booking not found or unauthorized' });
+            return res.status(404).json({ error: 'Booking not found, unauthorized, or cannot be cancelled in its current state' });
         }
         const booking = result.rows[0];
 
