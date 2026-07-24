@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const pool = require('../db');
 const { sendPushNotification } = require('./push');
+const { notifyWaitlist } = require('../routes/waitlist');
 
 function startScheduler() {
     cron.schedule('*/15 * * * *', async () => {
@@ -72,6 +73,41 @@ function startScheduler() {
                  WHERE status IN ('confirmed', 'active')
                  AND (booking_date::date + end_time::time) <= NOW()`
             );
+
+            await pool.query(
+                `UPDATE booking
+                 SET status = 'cancelled'
+                 WHERE status = 'pending'
+                 AND (booking_date::date + start_time::time) <= NOW()`
+            );
+
+            const expiredPending = await pool.query(
+                `UPDATE booking
+                 SET status = 'cancelled'
+                 WHERE status = 'pending'
+                 AND (booking_date::date + start_time::time) <= NOW()
+                 RETURNING id, facility_id, user_id, booking_date, start_time, end_time`
+            );
+
+            for (const booking of expiredPending.rows) {
+                try {
+                    const playerResult = await pool.query(
+                        'SELECT push_token FROM "user" WHERE id = $1',
+                        [booking.user_id]
+                    );
+                    if (playerResult.rows.length > 0 && playerResult.rows[0].push_token) {
+                        await sendPushNotification(
+                            playerResult.rows[0].push_token,
+                            'Booking Update',
+                            'Your booking request has been declined.',
+                            { route: 'Bookings', bookingId: booking.id }
+                        );
+                    }
+                    await notifyWaitlist(booking.facility_id, booking.booking_date, booking.start_time, booking.end_time);
+                } catch (err) {
+                    console.error(`[Scheduler] Failed to notify expired pending booking #${booking.id}:`, err);
+                }
+            }
 
             for (const booking of activated.rows) {
                 try {

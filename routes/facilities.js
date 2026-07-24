@@ -198,8 +198,6 @@ router.put('/:id', authenticateToken, requireHost, handleUpload,
         const { id } = req.params;
         const { name, type, location, price_per_hour, latitude, longitude, description } = req.body;
 
-        const newImageUrls = (req.files || []).map(f => `${req.protocol}://${req.get('host')}/uploads/${f.filename}`);
-
         try {
             const result = await pool.query(
                 'UPDATE facility SET name = $1, type = $2, location = $3, price_per_hour = $4, latitude = $5, longitude = $6, description = $7 WHERE id = $8 AND owner_id = $9 AND is_active = true RETURNING *',
@@ -244,6 +242,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
         if (result.rows.length === 0) return res.status(404).json({ error: 'Facility not found or unauthorized' });
         const imgs = await pool.query('SELECT image_url FROM facility_image WHERE facility_id = $1', [id]);
         for (const row of imgs.rows) deleteFile(row.image_url);
+        await pool.query('DELETE FROM facility_image WHERE facility_id = $1', [id]);
         res.json({ message: 'Facility deactivated successfully', facility: result.rows[0] });
     } catch (err) {
         console.error(err);

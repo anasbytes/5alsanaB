@@ -145,11 +145,15 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     try {
         await client.query('BEGIN');
 
+        await client.query('DELETE FROM review WHERE user_id = $1', [targetId]);
+        await client.query('DELETE FROM review WHERE facility_id IN (SELECT id FROM facility WHERE owner_id = $1)', [targetId]);
         await client.query('DELETE FROM booking WHERE user_id = $1', [targetId]);
         await client.query('DELETE FROM booking WHERE facility_id IN (SELECT id FROM facility WHERE owner_id = $1)', [targetId]);
         await client.query('DELETE FROM favorite WHERE user_id = $1', [targetId]);
         await client.query('DELETE FROM waitlist WHERE user_id = $1', [targetId]);
+        await client.query('DELETE FROM waitlist WHERE facility_id IN (SELECT id FROM facility WHERE owner_id = $1)', [targetId]);
         await client.query('DELETE FROM favorite WHERE facility_id IN (SELECT id FROM facility WHERE owner_id = $1)', [targetId]);
+        await client.query('DELETE FROM blocked_slot WHERE facility_id IN (SELECT id FROM facility WHERE owner_id = $1)', [targetId]);
 
         const ownedFacilities = await client.query('SELECT fi.image_url FROM facility_image fi JOIN facility f ON fi.facility_id = f.id WHERE f.owner_id = $1', [targetId]);
         await client.query('DELETE FROM facility WHERE owner_id = $1', [targetId]);

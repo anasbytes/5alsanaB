@@ -32,7 +32,11 @@ router.post('/', authenticateToken,
 
         try {
             await client.query('BEGIN');
-            await client.query('SELECT id FROM facility WHERE id = $1 FOR UPDATE', [facility_id]);
+            const facilityCheck = await client.query('SELECT id FROM facility WHERE id = $1 AND is_active = true FOR UPDATE', [facility_id]);
+            if (facilityCheck.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ error: 'Facility not found or unavailable.' });
+            }
 
             const facilityRooms = await client.query(
                 'SELECT id FROM room WHERE facility_id = $1 AND is_active = true',
@@ -263,13 +267,14 @@ router.get('/host/me', authenticateToken, async (req, res) => {
 const VALID_TRANSITIONS = {
     pending: ['confirmed', 'cancelled'],
     confirmed: ['completed', 'cancelled'],
+    active: ['completed', 'cancelled'],
     cancelled: [],
     completed: []
 };
 
 router.put('/:id/status', authenticateToken,
     body('status').trim().notEmpty().withMessage('Status is required'),
-    body('status').isIn(['pending', 'confirmed', 'cancelled', 'completed']).withMessage('Invalid status'),
+    body('status').isIn(['pending', 'confirmed', 'active', 'cancelled', 'completed']).withMessage('Invalid status'),
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
@@ -312,7 +317,12 @@ router.put('/:id/status', authenticateToken,
             );
             if (playerResult.rows.length > 0 && playerResult.rows[0].push_token) {
                 const { push_token } = playerResult.rows[0];
-                const statusMsg = status === 'confirmed' ? 'accepted' : 'declined';
+                const statusMessages = {
+                    confirmed: 'accepted',
+                    cancelled: 'declined',
+                    completed: 'marked as completed'
+                };
+                const statusMsg = statusMessages[status] || status;
                 await sendPushNotification(
                     push_token,
                     'Booking Update',

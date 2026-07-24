@@ -84,6 +84,11 @@ async function notifyWaitlist(facility_id, booking_date, start_time, end_time) {
                 { route: 'Home' }
             );
         }
+
+        await pool.query(
+            `DELETE FROM waitlist WHERE facility_id = $1 AND booking_date = $2 AND start_time = $3 AND end_time = $4`,
+            [facility_id, booking_date, start_time, end_time]
+        );
     } catch (err) {
         console.error('[Waitlist] Failed to notify waitlist:', err);
     }
