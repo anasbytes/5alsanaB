@@ -74,13 +74,6 @@ function startScheduler() {
                  AND (booking_date::date + end_time::time) <= NOW()`
             );
 
-            await pool.query(
-                `UPDATE booking
-                 SET status = 'cancelled'
-                 WHERE status = 'pending'
-                 AND (booking_date::date + start_time::time) <= NOW()`
-            );
-
             const expiredPending = await pool.query(
                 `UPDATE booking
                  SET status = 'cancelled'
