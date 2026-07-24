@@ -8,7 +8,7 @@ const { notifyWaitlist } = require('./waitlist');
 
 router.post('/', authenticateToken,
     body('facility_id').isInt().withMessage('Valid facility ID is required'),
-    body('room_id').isInt().withMessage('Valid room ID is required'),
+    body('room_id').optional({ nullable: true }).isInt().withMessage('Valid room ID if provided'),
     body('booking_date').isDate().withMessage('Valid date is required'),
     body('start_time').notEmpty().withMessage('Start time is required'),
     body('end_time').notEmpty().withMessage('End time is required'),
@@ -34,13 +34,25 @@ router.post('/', authenticateToken,
             await client.query('BEGIN');
             await client.query('SELECT id FROM facility WHERE id = $1 FOR UPDATE', [facility_id]);
 
-            const roomCheck = await pool.query(
-                'SELECT id FROM room WHERE id = $1 AND facility_id = $2 AND is_active = true',
-                [room_id, facility_id]
+            const facilityRooms = await client.query(
+                'SELECT id FROM room WHERE facility_id = $1 AND is_active = true',
+                [facility_id]
             );
-            if (roomCheck.rows.length === 0) {
-                await client.query('ROLLBACK');
-                return res.status(404).json({ error: 'Room not found or does not belong to this facility.' });
+            const facilityHasRooms = facilityRooms.rows.length > 0;
+
+            if (facilityHasRooms) {
+                if (!room_id) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ error: 'This facility requires a room selection.' });
+                }
+                const roomCheck = await client.query(
+                    'SELECT id FROM room WHERE id = $1 AND facility_id = $2 AND is_active = true',
+                    [room_id, facility_id]
+                );
+                if (roomCheck.rows.length === 0) {
+                    await client.query('ROLLBACK');
+                    return res.status(404).json({ error: 'Room not found or does not belong to this facility.' });
+                }
             }
 
             const blockCheck = await client.query(
@@ -59,14 +71,24 @@ router.post('/', authenticateToken,
                 return res.status(409).json({ error: 'This slot is blocked by the host.' });
             }
 
-            const overlapCheck = await client.query(
-                `SELECT id FROM booking
-                 WHERE room_id = $1
-                 AND booking_date = $2
-                 AND status IN ('confirmed', 'pending')
-                 AND (start_time < $4 AND end_time > $3)`,
-                [room_id, booking_date, start_time, end_time]
-            );
+            const overlapCheck = room_id
+                ? await client.query(
+                    `SELECT id FROM booking
+                     WHERE room_id = $1
+                     AND booking_date = $2
+                     AND status IN ('confirmed', 'pending')
+                     AND (start_time < $4 AND end_time > $3)`,
+                    [room_id, booking_date, start_time, end_time]
+                )
+                : await client.query(
+                    `SELECT id FROM booking
+                     WHERE facility_id = $1
+                     AND room_id IS NULL
+                     AND booking_date = $2
+                     AND status IN ('confirmed', 'pending')
+                     AND (start_time < $4 AND end_time > $3)`,
+                    [facility_id, booking_date, start_time, end_time]
+                );
 
             if (overlapCheck.rows.length > 0) {
                 await client.query('ROLLBACK');
