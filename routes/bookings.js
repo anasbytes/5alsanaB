@@ -311,4 +311,22 @@ router.put('/:id/status', authenticateToken,
     }
 );
 
+// GET /bookings/availability/today — returns facility_ids with confirmed/pending bookings today
+router.get('/availability/today', async (req, res) => {
+    try {
+        const today = new Date().toISOString().split('T')[0];
+        const result = await pool.query(
+            `SELECT facility_id, array_agg(json_build_object('start_time', start_time, 'end_time', end_time)) AS bookings
+             FROM booking
+             WHERE booking_date = $1 AND status IN ('confirmed', 'pending')
+             GROUP BY facility_id`,
+            [today]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
 module.exports = router;
