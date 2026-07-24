@@ -155,15 +155,15 @@ router.get('/player/me', authenticateToken, async (req, res) => {
         const result = await pool.query(
             `SELECT booking.*, facility.name AS facility_name, facility.type AS facility_type,
             facility.location AS facility_location,
-            room.name AS room_name, room.price_per_hour AS price_per_hour,
-            (EXTRACT(EPOCH FROM (booking.end_time::time - booking.start_time::time)) / 3600) * room.price_per_hour AS total_price,
+            room.name AS room_name, COALESCE(room.price_per_hour, facility.price_per_hour) AS price_per_hour,
+            (EXTRACT(EPOCH FROM (booking.end_time::time - booking.start_time::time)) / 3600) * COALESCE(room.price_per_hour, facility.price_per_hour) AS total_price,
             COALESCE(json_agg(fi.image_url ORDER BY fi.display_order) FILTER (WHERE fi.image_url IS NOT NULL), '[]') AS images
      FROM booking
      JOIN facility ON booking.facility_id = facility.id
      LEFT JOIN room ON booking.room_id = room.id
      LEFT JOIN facility_image fi ON fi.facility_id = facility.id
      WHERE booking.user_id = $1
-     GROUP BY booking.id, facility.name, facility.type, facility.location, room.name, room.price_per_hour
+     GROUP BY booking.id, facility.name, facility.type, facility.location, facility.price_per_hour, room.name, room.price_per_hour
      ORDER BY booking.booking_date DESC, booking.start_time DESC`,
             [userId]
         );
@@ -222,7 +222,7 @@ router.get('/host/me', authenticateToken, async (req, res) => {
                     f.name AS facility_name,
                     r.name AS room_name, r.price_per_hour,
                     u.username AS player_name,
-                    (EXTRACT(EPOCH FROM (b.end_time::time - b.start_time::time)) / 3600) * r.price_per_hour AS total_price
+                    (EXTRACT(EPOCH FROM (b.end_time::time - b.start_time::time)) / 3600) * COALESCE(r.price_per_hour, f.price_per_hour) AS total_price
              FROM booking b
              JOIN facility f ON b.facility_id = f.id
              LEFT JOIN room r ON b.room_id = r.id
